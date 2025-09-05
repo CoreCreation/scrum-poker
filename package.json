@@ -11,16 +11,11 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^6.1.1",
-    "@tsconfig/svelte": "^5.0.4",
-    "svelte": "^5.38.1",
-    "svelte-check": "^4.3.1",
-    "svelte-routing": "^2.13.0",
-    "typescript": "~5.8.3",
+    "@preact/preset-vite": "^2.10.2",
     "vite": "^7.1.2"
   },
   "dependencies": {
-    "svelte-tiny-router": "^1.0.8",
-    "uuid": "^11.1.0"
+    "preact": "^10.27.0",
+    "preact-iso": "^2.10.0"
   }
 }

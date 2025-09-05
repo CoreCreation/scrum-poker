@@ -59,7 +59,10 @@ func (s *SessionsHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = s.data.Sessions.GetSession(uuid)
 	if err != nil {
-		fmt.Println("Status check of Session:", uuidString)
-		w.WriteHeader(http.StatusOK)
+		fmt.Println("Error getting session", err)
+		http.Error(w, "Error Getting Session", http.StatusInternalServerError)
+		return
 	}
+	fmt.Println("Status check of Session:", uuidString)
+	w.WriteHeader(http.StatusOK)
 }
