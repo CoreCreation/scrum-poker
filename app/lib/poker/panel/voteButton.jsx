@@ -1,3 +1,3 @@
-export default function VoteButton({ option }) {
-  return <button>{option}</button>;
+export default function VoteButton({ option, sendVote }) {
+  return <button onClick={() => sendVote(option)}>{option}</button>;
 }

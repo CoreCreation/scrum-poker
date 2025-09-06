@@ -7,17 +7,18 @@ import (
 
 	"github.com/CoreCreation/scrum-poker/server/data"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
+var upgrader = websocket.Upgrader{}
+
 type SessionsHandler struct {
-	data           *data.Data
-	sessionHandler SessionHandler
+	data *data.Data
 }
 
 func NewSessionsHandler(data *data.Data) *SessionsHandler {
 	return &SessionsHandler{
-		data:           data,
-		sessionHandler: *NewSessionHandler(data),
+		data: data,
 	}
 }
 
@@ -27,9 +28,8 @@ func (s *SessionsHandler) GetRouter() *http.ServeMux {
 	// Mount own routes
 	sessionsRouter.HandleFunc("POST /sessions/create", s.CreateSession)
 	sessionsRouter.HandleFunc("GET /sessions/{uuid}", s.GetSession)
+	sessionsRouter.HandleFunc("/sessions/{uuid}/join", s.JoinSession)
 
-	sessionRouter := s.sessionHandler.GetRouter()
-	sessionRouter.Handle("/sessions/", http.StripPrefix("/sessions", sessionRouter))
 	return sessionsRouter
 }
 
@@ -65,4 +65,33 @@ func (s *SessionsHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Println("Status check of Session:", uuidString)
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *SessionsHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
+	uuidString := r.PathValue("uuid")
+	uuid, err := uuid.Parse(uuidString)
+	if err != nil {
+		fmt.Println("Unable to parse session UUID:", uuidString, err)
+		http.Error(w, "Bad UUID", http.StatusBadRequest)
+		return
+	}
+	fmt.Println("Client trying to open WebSocket Connection to Session:", uuidString)
+	session, err := s.data.Sessions.GetSession(uuid)
+	if err != nil {
+		fmt.Println("Error getting session", err)
+		http.Error(w, "Error Getting Session", http.StatusInternalServerError)
+		return
+	}
+	fmt.Println("Request to join Session:", uuidString)
+	connection, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		fmt.Println("Error occured while trying to upgrade connection to WebSocket:", err)
+		return
+	}
+
+	session.AddConnection(connection)
+
+	// Will this close it too soon?
+	defer connection.Close()
+
 }
