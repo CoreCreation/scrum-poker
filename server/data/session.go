@@ -74,8 +74,6 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 		for _, data := range s.connections {
 			data.Vote = -1
 		}
-	case "HideVotes":
-		fmt.Println("Votes Hidden")
 		s.votesVisible = false
 	case "ShowVotes":
 		fmt.Println("Votes Shown")
@@ -84,7 +82,11 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 		fmt.Println("Set Vote Options to:", msg.Body)
 		s.voteOptions = msg.Body
 	case "Init":
-		// No-op just send state
+		fmt.Println("Init")
+		if len(msg.Body) > 0 {
+			fmt.Println("Changing Username to", msg.Body)
+			data.Name = msg.Body
+		}
 	}
 
 	s.sendState()

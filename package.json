@@ -6,7 +6,9 @@
   "scripts": {
     "dev:ui": "vite",
     "dev:server": "air",
-    "build": "vite build",
+    "build:ui": "vite build",
+    "build:server": "go build -o main .",
+    "build": "npm run build:server && npm run build:ui",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
   },
@@ -16,6 +18,7 @@
   },
   "dependencies": {
     "@picocss/pico": "^2.1.1",
+    "js-confetti": "^0.13.1",
     "preact": "^10.27.0",
     "preact-iso": "^2.10.0"
   }

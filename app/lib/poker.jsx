@@ -2,10 +2,10 @@ import { useLocation, useRoute } from "preact-iso";
 
 import Panel from "./poker/panel";
 import VoteList from "./poker/voteList";
-import { useEffect, useRef } from "preact/hooks";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "preact/hooks";
 import EditNameModal from "./poker/editNameModal";
 import EditVoteOptionsModal from "./poker/editVoteOptionsModal";
+import JSConfetti from "js-confetti";
 
 export default function Poker() {
   const {
@@ -19,13 +19,35 @@ export default function Poker() {
   const [voteOptions, setVoteOptions] = useState([]);
   const [voteData, setVoteData] = useState(null);
   const wsRef = useRef(null);
+  const confettiRef = useRef(null);
   const [userName, setUserName] = useState(
     localStorage.getItem("scrum-poker-username") || null
   );
+  const [lastVote, setLastVote] = useState(null);
 
   // UI State
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editVotesOpen, setEditVotesOpen] = useState(false);
+
+  useEffect(() => {
+    confettiRef.current = new JSConfetti();
+
+    return () => confettiRef.current?.clearCanvas();
+  }, []);
+
+  useEffect(() => {
+    if (votesVisible) {
+      const votes = voteData.map((c) => c.vote).filter((c) => c !== -1);
+      const first = votes[0];
+      if (
+        votes.length > 1 &&
+        votes.reduce((p, c) => (p &&= c === first), true)
+      ) {
+        confettiRef.current.addConfetti();
+      }
+    }
+    setLastVote(null);
+  }, [votesVisible]);
 
   useEffect(async () => {
     let res = await fetch("/api/sessions/" + id);
@@ -47,7 +69,7 @@ export default function Poker() {
       ws.send(
         JSON.stringify({
           type: "Init",
-          body: "",
+          body: userName ? userName : "",
         })
       );
     };
@@ -100,6 +122,7 @@ export default function Poker() {
       })
     );
     setUserName(newName);
+    localStorage.setItem("scrum-poker-username", newName);
     setEditNameOpen(false);
   }
 
@@ -120,6 +143,7 @@ export default function Poker() {
         body: String(number),
       })
     );
+    setLastVote(number);
   }
 
   function clearVotes() {
@@ -131,10 +155,10 @@ export default function Poker() {
     );
   }
 
-  function toggleVoteVisibility() {
+  function showVotes() {
     wsRef.current.send(
       JSON.stringify({
-        type: votesVisible ? "HideVotes" : "ShowVotes",
+        type: "ShowVotes",
         body: "",
       })
     );
@@ -170,30 +194,39 @@ export default function Poker() {
           </ul>
         </nav>
       </header>
-      <main>
-        <EditNameModal
-          open={editNameOpen}
-          setOpen={setEditNameOpen}
-          save={editName}
-          name={userName}
-        />
-        <EditVoteOptionsModal
-          open={editVotesOpen}
-          setOpen={setEditVotesOpen}
-          save={editVotes}
-          current={voteOptions}
-        />
-        <Panel options={voteOptions} sendVote={sendVote} />
-        <VoteList data={voteData} votesVisible={votesVisible} />
-      </main>
-      <div role="group">
-        <button onClick={toggleVoteVisibility}>
-          {votesVisible ? "Hide " : "Show "} Votes
-        </button>
-        <button class="secondary" onClick={clearVotes}>
-          Clear Votes
-        </button>
-      </div>
+      {!voteData ? (
+        <main>
+          <div aria-busy="true"></div>
+        </main>
+      ) : (
+        <main>
+          <EditNameModal
+            open={editNameOpen}
+            setOpen={setEditNameOpen}
+            save={editName}
+            name={userName}
+          />
+          <EditVoteOptionsModal
+            open={editVotesOpen}
+            setOpen={setEditVotesOpen}
+            save={editVotes}
+            current={voteOptions}
+          />
+          <Panel
+            options={voteOptions}
+            sendVote={sendVote}
+            lastVote={lastVote}
+          />
+          <VoteList data={voteData} votesVisible={votesVisible} />
+          {votesVisible ? (
+            <button class="secondary" onClick={clearVotes}>
+              Clear Votes
+            </button>
+          ) : (
+            <button onClick={showVotes}>Show Votes</button>
+          )}
+        </main>
+      )}
       <footer>
         <span>Connection Status: {status}</span>
         <span>

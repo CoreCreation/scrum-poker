@@ -15,7 +15,7 @@ export default function Landing() {
   }
 
   return (
-    <div>
+    <div class="landing-page">
       <button onClick={onclick}>Create New Voting Session</button>
     </div>
   );

@@ -14,6 +14,14 @@ body, #app {
   height: 100%;
 }
 
+.landing-page {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .poker {
   display: flex;
   flex-direction: column;
@@ -37,11 +45,34 @@ body, #app {
       height: 3em;
 
       padding: unset;
+
+      &.selected {
+        background-color: var(--pico-form-element-background-color);
+      }
     }
   }
 
-  th, td {
-    width: 50%;
+  main {
+    display: flex;
+    flex-direction: column;
+    gap: 1em;
+  }
+
+  table {
+    border: var(--pico-border-width) solid var(--pico-table-border-color);
+    border-radius: var(--pico-border-radius);
+
+    border-spacing: 0;
+    border-collapse: separate;
+    overflow: hidden;
+
+    th, td {
+      width: 50%;
+    }
+
+    .average-row th, .average-row td {
+      background-color: var(--pico-form-element-background-color);
+    }
   }
 
   footer {

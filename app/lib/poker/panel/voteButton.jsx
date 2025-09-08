@@ -1,6 +1,9 @@
-export default function VoteButton({ option, sendVote }) {
+export default function VoteButton({ option, sendVote, lastVote }) {
   return (
-    <button class="outline" onClick={() => sendVote(option)}>
+    <button
+      class={lastVote === option ? "outline secondary selected" : "outline"}
+      onClick={() => sendVote(option)}
+    >
       {option}
     </button>
   );
