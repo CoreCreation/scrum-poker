@@ -14,10 +14,10 @@ import (
 var upgrader = websocket.Upgrader{}
 
 type SessionsHandler struct {
-	data *data.Data
+	data *data.Sessions
 }
 
-func NewSessionsHandler(data *data.Data) *SessionsHandler {
+func NewSessionsHandler(data *data.Sessions) *SessionsHandler {
 	return &SessionsHandler{
 		data: data,
 	}
@@ -39,7 +39,7 @@ type CreateSessionResponse struct {
 }
 
 func (s *SessionsHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
-	uuid := s.data.Sessions.CreateSession()
+	uuid := s.data.CreateSession()
 	body := CreateSessionResponse{
 		UUID: uuid.String(),
 	}
@@ -58,7 +58,7 @@ func (s *SessionsHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad UUID", http.StatusBadRequest)
 		return
 	}
-	_, err = s.data.Sessions.GetSession(uuid)
+	_, err = s.data.GetSession(uuid)
 	if err != nil {
 		fmt.Println("Error getting session", err)
 		http.Error(w, "Error Getting Session", http.StatusInternalServerError)
@@ -77,7 +77,7 @@ func (s *SessionsHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Println("Client trying to open WebSocket Connection to Session:", uuidString)
-	session, err := s.data.Sessions.GetSession(uuid)
+	session, err := s.data.GetSession(uuid)
 	if err != nil {
 		fmt.Println("Error getting session", err)
 		http.Error(w, "Error Getting Session", http.StatusInternalServerError)
@@ -86,9 +86,9 @@ func (s *SessionsHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Request to join Session:", uuidString)
 	connection, err := upgrader.Upgrade(w, r, nil)
 	connection.SetReadLimit(1 << 20)
-	connection.SetReadDeadline(time.Now().Add(60 * time.Second))
+	connection.SetReadDeadline(time.Now().Add(time.Hour))
 	connection.SetPongHandler(func(string) error {
-		connection.SetReadDeadline(time.Now().Add(60 * time.Second))
+		connection.SetReadDeadline(time.Now().Add(time.Hour))
 		return nil
 	})
 	if err != nil {
@@ -98,7 +98,10 @@ func (s *SessionsHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
 
 	session.AddConnection(connection)
 
-	// Will this close it too soon?
-	defer connection.Close()
+	defer func() {
+		fmt.Println("Connection Closing")
+		session.RemoveConnection(connection)
+		connection.Close()
+	}()
 
 }

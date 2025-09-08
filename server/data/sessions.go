@@ -2,6 +2,7 @@ package data
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 )
@@ -18,8 +19,13 @@ func NewSessions() *Sessions {
 
 func (s *Sessions) CreateSession() uuid.UUID {
 	uuid := uuid.New()
-	s.Sessions[uuid] = NewSession()
+	s.Sessions[uuid] = NewSession(s, uuid)
 	return uuid
+}
+
+func (s *Sessions) RemoveSession(uuid uuid.UUID) {
+	fmt.Println("Timer is removing session:", uuid)
+	delete(s.Sessions, uuid)
 }
 
 func (s *Sessions) GetSession(uuid uuid.UUID) (*Session, error) {

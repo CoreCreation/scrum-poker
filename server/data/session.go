@@ -6,10 +6,13 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
+
+var timeLimit time.Duration = 5 * time.Second
 
 type Connection struct {
 	Name      string    `json:"name"`
@@ -21,27 +24,53 @@ type Connection struct {
 }
 
 type Session struct {
+	parent          *Sessions
 	votesVisible    bool
 	voteOptions     string
 	connections     map[*websocket.Conn]*Connection
 	mostRecentState atomic.Value
+	idleTimer       *time.Timer
+	uuid            uuid.UUID
 }
 
-func NewSession() *Session {
-	return &Session{
+func NewSession(parent *Sessions, uuid uuid.UUID) *Session {
+	session := &Session{
+		parent:       parent,
+		uuid:         uuid,
 		votesVisible: false,
 		voteOptions:  "1, 2, 3, 5, 8",
 		connections:  make(map[*websocket.Conn]*Connection),
 	}
+
+	session.idleTimer = time.AfterFunc(timeLimit, func() {
+		if len(session.connections) > 0 {
+			return
+		}
+
+		session.parent.RemoveSession(session.uuid)
+	})
+
+	return session
 }
 
 func (s *Session) AddConnection(connection *websocket.Conn) {
+	fmt.Println("Adding a connection and stopping session timer")
+	s.idleTimer.Stop()
 	s.connections[connection] = &Connection{
 		UUID: uuid.New(),
 		Name: "No Username",
 		Vote: -1,
 	}
 	s.readLoop(connection, s.connections[connection])
+}
+
+func (s *Session) RemoveConnection(connection *websocket.Conn) {
+	delete(s.connections, connection)
+	s.sendState()
+	if len(s.connections) == 0 {
+		fmt.Println("All connections removed, starting session timer")
+		s.idleTimer.Reset(timeLimit)
+	}
 }
 
 type ClientCommand struct {
@@ -55,8 +84,6 @@ func (s *Session) readLoop(connection *websocket.Conn, data *Connection) {
 
 		if err := connection.ReadJSON(&command); err != nil {
 			fmt.Println("Unable to read Client Command:", err)
-			delete(s.connections, connection)
-			s.sendState()
 			break
 		}
 		s.handleMessage(command, data)

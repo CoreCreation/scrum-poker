@@ -7,12 +7,12 @@ import (
 )
 
 type Handlers struct {
-	data *data.Data
+	data *data.Sessions
 
 	sessionsHandler *SessionsHandler
 }
 
-func NewHandlers(data *data.Data) *Handlers {
+func NewHandlers(data *data.Sessions) *Handlers {
 	return &Handlers{
 		data:            data,
 		sessionsHandler: NewSessionsHandler(data),

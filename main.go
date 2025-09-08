@@ -11,7 +11,7 @@ import (
 
 func main() {
 	fs := http.Dir("./dist")
-	data := data.NewData()
+	data := data.NewSessions()
 	const addr = ":3001"
 
 	fmt.Println("Starting Server at port:", addr)
