@@ -1,8 +1,13 @@
-export default function VoteButton({ option, sendVote, lastVote }) {
+export default function VoteButton({ option, sendVote, lastVote, disabled }) {
   return (
     <button
-      class={lastVote === option ? "outline secondary selected" : "outline"}
+      class={
+        lastVote === option && !disabled
+          ? "outline secondary selected"
+          : "outline"
+      }
       onClick={() => sendVote(option)}
+      disabled={disabled}
     >
       {option}
     </button>

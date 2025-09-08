@@ -20,6 +20,7 @@ export default function Poker() {
   const [voteData, setVoteData] = useState(null);
   const wsRef = useRef(null);
   const confettiRef = useRef(null);
+  const dropdownRef = useRef(null);
   const [userName, setUserName] = useState(
     localStorage.getItem("scrum-poker-username") || null
   );
@@ -188,7 +189,9 @@ export default function Poker() {
         type: "LeaveVote",
       })
     );
+    setLastVote(null);
     setIsVoting(false);
+    dropdownRef.current.open = false;
   }
 
   function joinVote() {
@@ -198,6 +201,7 @@ export default function Poker() {
       })
     );
     setIsVoting(true);
+    dropdownRef.current.open = false;
   }
 
   return (
@@ -211,16 +215,26 @@ export default function Poker() {
           </ul>
           <ul>
             <li>
-              <details class="dropdown">
+              <details class="dropdown" ref={dropdownRef}>
                 <summary>Actions</summary>
                 <ul dir="rtl">
                   <li>
-                    <a onClick={() => setEditNameOpen((prev) => !prev)}>
+                    <a
+                      onClick={() => {
+                        setEditNameOpen((prev) => !prev);
+                        dropdownRef.current.open = false;
+                      }}
+                    >
                       Edit Username
                     </a>
                   </li>
                   <li>
-                    <a onClick={() => setEditVotesOpen(true)}>
+                    <a
+                      onClick={() => {
+                        setEditVotesOpen(true);
+                        dropdownRef.current.open = false;
+                      }}
+                    >
                       Edit Vote Options
                     </a>
                   </li>
@@ -259,6 +273,7 @@ export default function Poker() {
             options={voteOptions}
             sendVote={sendVote}
             lastVote={lastVote}
+            disabled={!isVoting}
           />
           <VoteList data={voteData} votesVisible={votesVisible} />
           {votesVisible ? (

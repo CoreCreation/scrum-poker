@@ -118,6 +118,7 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 	case "LeaveVote":
 		fmt.Println("User leaving vote")
 		data.Active = false
+		data.Vote = -1
 	case "JoinVote":
 		fmt.Println("User joining vote")
 		data.Active = true
