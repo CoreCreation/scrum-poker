@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/CoreCreation/scrum-poker/server/data"
 	"github.com/google/uuid"
@@ -84,6 +85,12 @@ func (s *SessionsHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Println("Request to join Session:", uuidString)
 	connection, err := upgrader.Upgrade(w, r, nil)
+	connection.SetReadLimit(1 << 20)
+	connection.SetReadDeadline(time.Now().Add(60 * time.Second))
+	connection.SetPongHandler(func(string) error {
+		connection.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
 	if err != nil {
 		fmt.Println("Error occured while trying to upgrade connection to WebSocket:", err)
 		return

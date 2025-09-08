@@ -1,23 +1,30 @@
 package data
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
 type Connection struct {
-	Name string    `json:"name"`
-	UUID uuid.UUID `json:"uuid"`
-	Vote int64     `json:"vote"`
+	Name      string    `json:"name"`
+	UUID      uuid.UUID `json:"uuid"`
+	Vote      int64     `json:"vote"`
+	Active    bool      `json:"active"`
+	mu        sync.Mutex
+	outOfDate atomic.Bool
 }
 
 type Session struct {
-	votesVisible bool
-	voteOptions  string
-	connections  map[*websocket.Conn]*Connection
+	votesVisible    bool
+	voteOptions     string
+	connections     map[*websocket.Conn]*Connection
+	mostRecentState atomic.Value
 }
 
 func NewSession() *Session {
@@ -81,12 +88,14 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 	case "SetOptions":
 		fmt.Println("Set Vote Options to:", msg.Body)
 		s.voteOptions = msg.Body
+	case "LeaveVote":
+		fmt.Println("User leaving vote")
+		data.Active = false
+	case "JoinVote":
+		fmt.Println("User joining vote")
+		data.Active = true
 	case "Init":
 		fmt.Println("Init")
-		if len(msg.Body) > 0 {
-			fmt.Println("Changing Username to", msg.Body)
-			data.Name = msg.Body
-		}
 	}
 
 	s.sendState()
@@ -103,17 +112,55 @@ func (s *Session) sendState() {
 	for _, v := range s.connections {
 		values = append(values, v)
 	}
-	state := State{
+
+	jd, err := json.Marshal(State{
 		VotesVisible: s.votesVisible,
 		VoteOptions:  s.voteOptions,
 		UserData:     values,
+	})
+	if err != nil {
+		fmt.Println("Unable to marshal JSON")
+		return
 	}
+	s.mostRecentState.Store(jd)
 
-	for ws := range s.connections {
-		go func(ws *websocket.Conn) {
-			if err := ws.WriteJSON(&state); err != nil {
-				fmt.Println("Write error:", err)
+	for ws, data := range s.connections {
+		go s.sendData(ws, data)
+	}
+}
+
+func (s *Session) sendData(ws *websocket.Conn, data *Connection) {
+	fmt.Println("Going to broadcast data", data.outOfDate.Load())
+	if data.mu.TryLock() {
+		fmt.Println("Got the lock")
+		defer data.mu.Unlock()
+		jd := s.mostRecentState.Load()
+		if jd == nil {
+			fmt.Println("Cached JSON not found")
+			return
+		}
+		if err := ws.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
+			fmt.Println("Write error:", err)
+			data.outOfDate.Store(false)
+			return
+		}
+		fmt.Println("Sent JSON", data.outOfDate.Load())
+		for data.outOfDate.Swap(false) {
+			fmt.Println("After sending data, outOfDate was true, sending data again")
+			jd := s.mostRecentState.Load()
+			if jd == nil {
+				fmt.Println("Cached JSON not found")
+				return
 			}
-		}(ws)
+			if err := ws.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
+				fmt.Println("Write error:", err)
+				data.outOfDate.Store(false)
+				return
+			}
+		}
+	} else {
+		data.outOfDate.Store(true)
+		fmt.Println("Unable to get lock, will send data again")
+		return
 	}
 }

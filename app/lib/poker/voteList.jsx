@@ -1,9 +1,10 @@
 export default function VoteList({ data, votesVisible }) {
-  console.log(data);
   if (!data || !data.length) return <div>Waiting for Voters!</div>;
   const votes = data.map((i) => i.vote).filter((i) => i !== -1);
   const average = votes.reduce((p, c) => p + c, 0) / votes.length;
-  const dataSorted = data.sort((a, b) => a.vote - b.vote);
+  const dataSorted = data
+    .filter((i) => i.active)
+    .sort((a, b) => a.vote - b.vote);
   return (
     <table>
       <thead>

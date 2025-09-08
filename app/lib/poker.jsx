@@ -23,6 +23,9 @@ export default function Poker() {
   const [userName, setUserName] = useState(
     localStorage.getItem("scrum-poker-username") || null
   );
+  const [isVoting, setIsVoting] = useState(
+    localStorage.getItem("scrum-poker-is-voting") || null
+  );
   const [lastVote, setLastVote] = useState(null);
 
   // UI State
@@ -69,9 +72,24 @@ export default function Poker() {
       ws.send(
         JSON.stringify({
           type: "Init",
-          body: userName ? userName : "",
+          body: "",
         })
       );
+      if (userName) {
+        ws.send(
+          JSON.stringify({
+            type: "SetName",
+            body: userName,
+          })
+        );
+      }
+      if (!isVoting) {
+        ws.send(
+          JSON.stringify({
+            type: "LeaveVote",
+          })
+        );
+      }
     };
     ws.onclose = () => {
       alert("Connection Closed. Please Refresh to Reconnect");
@@ -164,6 +182,24 @@ export default function Poker() {
     );
   }
 
+  function leaveVote() {
+    wsRef.current.send(
+      JSON.stringify({
+        type: "LeaveVote",
+      })
+    );
+    setIsVoting(false);
+  }
+
+  function joinVote() {
+    wsRef.current.send(
+      JSON.stringify({
+        type: "JoinVote",
+      })
+    );
+    setIsVoting(true);
+  }
+
   return (
     <div class="container poker">
       <header>
@@ -187,6 +223,13 @@ export default function Poker() {
                     <a onClick={() => setEditVotesOpen(true)}>
                       Edit Vote Options
                     </a>
+                  </li>
+                  <li>
+                    {isVoting ? (
+                      <a onClick={leaveVote}>Leave Vote</a>
+                    ) : (
+                      <a onClick={joinVote}>Join Vote</a>
+                    )}
                   </li>
                 </ul>
               </details>
