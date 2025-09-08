@@ -5,6 +5,7 @@ import VoteList from "./poker/voteList";
 import { useEffect, useRef } from "preact/hooks";
 import { useState } from "react";
 import EditNameModal from "./poker/editNameModal";
+import EditVoteOptionsModal from "./poker/editVoteOptionsModal";
 
 export default function Poker() {
   const {
@@ -14,14 +15,17 @@ export default function Poker() {
   const { route } = useLocation();
 
   const [status, setStatus] = useState("Connecting..");
+  const [votesVisible, setVotesVisible] = useState(false);
+  const [voteOptions, setVoteOptions] = useState([]);
   const [voteData, setVoteData] = useState(null);
   const wsRef = useRef(null);
-  const userName = useState(
+  const [userName, setUserName] = useState(
     localStorage.getItem("scrum-poker-username") || null
   );
 
   // UI State
   const [editNameOpen, setEditNameOpen] = useState(false);
+  const [editVotesOpen, setEditVotesOpen] = useState(false);
 
   useEffect(async () => {
     let res = await fetch("/api/sessions/" + id);
@@ -58,8 +62,17 @@ export default function Poker() {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
+        setVotesVisible(msg.votesVisible);
         setVoteData(msg.userData);
-        console.log("Got Data", msg);
+        const numbers = msg.voteOptions
+          .split(",")
+          .map((s) => parseInt(s.trim()));
+        if (
+          numbers.reduce((p, c) => (p &&= c > 0 && !Number.isNaN(c)), true) &&
+          !isEqual(voteOptions, numbers)
+        ) {
+          setVoteOptions(numbers);
+        }
       } catch {
         console.log("Unable to parse JSON from WebSocket");
       }
@@ -71,6 +84,14 @@ export default function Poker() {
     };
   }, []);
 
+  function isEqual(a1, a2) {
+    if (a1.length !== a2.length) return false;
+    for (let i = 0; i < a1.length; i++) {
+      if (a1[i] !== a2[i]) return false;
+    }
+    return true;
+  }
+
   function editName(newName) {
     wsRef.current.send(
       JSON.stringify({
@@ -78,7 +99,18 @@ export default function Poker() {
         body: newName,
       })
     );
+    setUserName(newName);
     setEditNameOpen(false);
+  }
+
+  function editVotes(str) {
+    wsRef.current.send(
+      JSON.stringify({
+        type: "SetOptions",
+        body: str,
+      })
+    );
+    setEditVotesOpen(false);
   }
 
   function sendVote(number) {
@@ -90,19 +122,84 @@ export default function Poker() {
     );
   }
 
+  function clearVotes() {
+    wsRef.current.send(
+      JSON.stringify({
+        type: "ClearVotes",
+        body: "",
+      })
+    );
+  }
+
+  function toggleVoteVisibility() {
+    wsRef.current.send(
+      JSON.stringify({
+        type: votesVisible ? "HideVotes" : "ShowVotes",
+        body: "",
+      })
+    );
+  }
+
   return (
-    <div>
-      Connection Status: {status} <br />
-      Session ID: {id} <br />
-      Username: {userName}
-      <EditNameModal open={editNameOpen} save={editName} />
-      <Panel options={[1, 2, 3, 5, 8, 12]} sendVote={sendVote} />
-      <button onClick={() => setEditNameOpen((prev) => !prev)}>
-        Edit Name
-      </button>
-      <button>Edit Vote Options</button>
-      <button>Clear Votes</button>
-      <VoteList data={voteData} />
+    <div class="container poker">
+      <header>
+        <nav>
+          <ul>
+            <li>
+              <strong>&#123;TeamNameGoesHere&#125; Poker</strong>
+            </li>
+          </ul>
+          <ul>
+            <li>
+              <details class="dropdown">
+                <summary>Actions</summary>
+                <ul dir="rtl">
+                  <li>
+                    <a onClick={() => setEditNameOpen((prev) => !prev)}>
+                      Edit Username
+                    </a>
+                  </li>
+                  <li>
+                    <a onClick={() => setEditVotesOpen(true)}>
+                      Edit Vote Options
+                    </a>
+                  </li>
+                </ul>
+              </details>
+            </li>
+          </ul>
+        </nav>
+      </header>
+      <main>
+        <EditNameModal
+          open={editNameOpen}
+          setOpen={setEditNameOpen}
+          save={editName}
+          name={userName}
+        />
+        <EditVoteOptionsModal
+          open={editVotesOpen}
+          setOpen={setEditVotesOpen}
+          save={editVotes}
+          current={voteOptions}
+        />
+        <Panel options={voteOptions} sendVote={sendVote} />
+        <VoteList data={voteData} votesVisible={votesVisible} />
+      </main>
+      <div role="group">
+        <button onClick={toggleVoteVisibility}>
+          {votesVisible ? "Hide " : "Show "} Votes
+        </button>
+        <button class="secondary" onClick={clearVotes}>
+          Clear Votes
+        </button>
+      </div>
+      <footer>
+        <span>Connection Status: {status}</span>
+        <span>
+          Session ID: {id} <br />
+        </span>
+      </footer>
     </div>
   );
 }

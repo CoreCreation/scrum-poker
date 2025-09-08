@@ -1,25 +1,54 @@
-#app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  height: 100%;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.preact:hover {
-  filter: drop-shadow(0 0 2em #673ab8aa);
+body, #app {
+  height: 100%;
 }
 
-.card {
-  padding: 2em;
-}
+.poker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1em;
 
-.read-the-docs {
-  color: #888;
+  [role=group] button {
+    width: 50%;
+  }
+
+  .vote-panel-options {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-evenly;
+
+    gap: .4em;
+
+    button {
+      width: 3em;
+      height: 3em;
+
+      padding: unset;
+    }
+  }
+
+  th, td {
+    width: 50%;
+  }
+
+  footer {
+    margin-top: auto;
+    flex-direction: row;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+  }
 }

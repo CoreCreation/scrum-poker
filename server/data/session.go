@@ -16,12 +16,14 @@ type Connection struct {
 
 type Session struct {
 	votesVisible bool
+	voteOptions  string
 	connections  map[*websocket.Conn]*Connection
 }
 
 func NewSession() *Session {
 	return &Session{
 		votesVisible: false,
+		voteOptions:  "1, 2, 3, 5, 8",
 		connections:  make(map[*websocket.Conn]*Connection),
 	}
 }
@@ -67,6 +69,20 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 		}
 		fmt.Println("Vote Cast for", msg.Body)
 		data.Vote = vote
+	case "ClearVotes":
+		fmt.Println("All Votes Cleared")
+		for _, data := range s.connections {
+			data.Vote = -1
+		}
+	case "HideVotes":
+		fmt.Println("Votes Hidden")
+		s.votesVisible = false
+	case "ShowVotes":
+		fmt.Println("Votes Shown")
+		s.votesVisible = true
+	case "SetOptions":
+		fmt.Println("Set Vote Options to:", msg.Body)
+		s.voteOptions = msg.Body
 	case "Init":
 		// No-op just send state
 	}
@@ -76,6 +92,7 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 
 type State struct {
 	VotesVisible bool          `json:"votesVisible"`
+	VoteOptions  string        `json:"voteOptions"`
 	UserData     []*Connection `json:"userData"`
 }
 
@@ -86,6 +103,7 @@ func (s *Session) sendState() {
 	}
 	state := State{
 		VotesVisible: s.votesVisible,
+		VoteOptions:  s.voteOptions,
 		UserData:     values,
 	}
 

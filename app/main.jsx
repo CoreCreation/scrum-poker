@@ -1,6 +1,6 @@
 import "preact/debug";
 import { render } from "preact";
-import "./index.css";
+import "@picocss/pico";
 import { App } from "./app.jsx";
 
 render(<App />, document.getElementById("app"));
