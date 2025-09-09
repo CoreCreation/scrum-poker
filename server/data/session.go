@@ -24,13 +24,15 @@ type Connection struct {
 }
 
 type Session struct {
-	parent          *Sessions
-	votesVisible    bool
-	voteOptions     string
-	connections     map[*websocket.Conn]*Connection
-	mostRecentState atomic.Value
-	idleTimer       *time.Timer
-	uuid            uuid.UUID
+	parent              *Sessions
+	votesVisible        bool
+	voteOptions         string
+	connections         map[*websocket.Conn]*Connection
+	mostRecentState     atomic.Value
+	idleTimer           *time.Timer
+	uuid                uuid.UUID
+	toggleCooldown      atomic.Bool
+	toggleCooldownTimer *time.Timer
 }
 
 func NewSession(parent *Sessions, uuid uuid.UUID) *Session {
@@ -105,14 +107,24 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 		fmt.Println("Vote Cast for", msg.Body)
 		data.Vote = vote
 	case "ClearVotes":
+		if s.toggleCooldown.Load() {
+			fmt.Println("Toggle is on cooldown, skipping")
+			break
+		}
 		fmt.Println("All Votes Cleared")
 		for _, data := range s.connections {
 			data.Vote = -1
 		}
 		s.votesVisible = false
+		s.setTimer()
 	case "ShowVotes":
+		if s.toggleCooldown.Load() {
+			fmt.Println("Toggle is on cooldown, skipping")
+			break
+		}
 		fmt.Println("Votes Shown")
 		s.votesVisible = true
+		s.setTimer()
 	case "SetOptions":
 		fmt.Println("Set Vote Options to:", msg.Body)
 		s.voteOptions = msg.Body
@@ -128,6 +140,13 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 	}
 
 	s.sendState()
+}
+
+func (s *Session) setTimer() {
+	s.toggleCooldown.Store(true)
+	s.toggleCooldownTimer = time.AfterFunc(1*time.Second, func() {
+		s.toggleCooldown.Swap(false)
+	})
 }
 
 type State struct {
