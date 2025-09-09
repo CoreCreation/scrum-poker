@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var timeLimit time.Duration = 5 * time.Second
+var timeLimit time.Duration = 10 * time.Minute
 
 type Connection struct {
 	Name      string    `json:"name"`
