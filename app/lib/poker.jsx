@@ -24,9 +24,10 @@ export default function Poker() {
   const [userName, setUserName] = useState(
     localStorage.getItem("scrum-poker-username") || null
   );
-  const [isVoting, setIsVoting] = useState(
-    localStorage.getItem("scrum-poker-is-voting") || null
-  );
+  const [isVoting, setIsVoting] = useState(() => {
+    const curr = localStorage.getItem("scrum-poker-is-voting");
+    return curr === null ? true : curr === "true";
+  });
   const [lastVote, setLastVote] = useState(null);
 
   // UI State
@@ -84,7 +85,7 @@ export default function Poker() {
           })
         );
       }
-      if (!isVoting) {
+      if (isVoting === false) {
         ws.send(
           JSON.stringify({
             type: "LeaveVote",
@@ -192,6 +193,7 @@ export default function Poker() {
     setLastVote(null);
     setIsVoting(false);
     dropdownRef.current.open = false;
+    localStorage.setItem("scrum-poker-is-voting", false);
   }
 
   function joinVote() {
@@ -202,6 +204,7 @@ export default function Poker() {
     );
     setIsVoting(true);
     dropdownRef.current.open = false;
+    localStorage.setItem("scrum-poker-is-voting", true);
   }
 
   return (

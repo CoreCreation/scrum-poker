@@ -57,9 +57,10 @@ func (s *Session) AddConnection(connection *websocket.Conn) {
 	fmt.Println("Adding a connection and stopping session timer")
 	s.idleTimer.Stop()
 	s.connections[connection] = &Connection{
-		UUID: uuid.New(),
-		Name: "No Username",
-		Vote: -1,
+		UUID:   uuid.New(),
+		Name:   "No Username",
+		Vote:   -1,
+		Active: true,
 	}
 	s.readLoop(connection, s.connections[connection])
 }
