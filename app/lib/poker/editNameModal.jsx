@@ -22,7 +22,7 @@ export default function EditNameModal({ open, setOpen, save, name }) {
         <input
           ref={textRef}
           type="text"
-          value={name}
+          defaultValue={name}
           required="true"
           minLength={1}
           maxLength={64}

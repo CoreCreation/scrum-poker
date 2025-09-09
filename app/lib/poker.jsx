@@ -7,6 +7,8 @@ import EditNameModal from "./poker/editNameModal";
 import EditVoteOptionsModal from "./poker/editVoteOptionsModal";
 import JSConfetti from "js-confetti";
 
+import ThemeToggle from "./components/themeToggle";
+
 export default function Poker() {
   const {
     params: { id },
@@ -251,6 +253,7 @@ export default function Poker() {
                 </ul>
               </details>
             </li>
+            <ThemeToggle />
           </ul>
         </nav>
       </header>

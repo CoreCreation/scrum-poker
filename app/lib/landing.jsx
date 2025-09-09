@@ -1,4 +1,5 @@
 import { useLocation } from "preact-iso";
+import ThemeToggle from "./components/themeToggle";
 
 export default function Landing() {
   const { route } = useLocation();
@@ -15,8 +16,22 @@ export default function Landing() {
   }
 
   return (
-    <div class="landing-page">
-      <button onClick={onclick}>Create New Voting Session</button>
+    <div class="container landing">
+      <header>
+        <nav>
+          <ul>
+            <li>
+              <strong>&#123;TeamNameGoesHere&#125; Poker</strong>
+            </li>
+          </ul>
+          <ul>
+            <ThemeToggle />
+          </ul>
+        </nav>
+      </header>
+      <main>
+        <button onClick={onclick}>Create New Voting Session</button>
+      </main>
     </div>
   );
 }
