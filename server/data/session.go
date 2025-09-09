@@ -15,12 +15,13 @@ import (
 var timeLimit time.Duration = 10 * time.Minute
 
 type Connection struct {
-	Name      string    `json:"name"`
-	UUID      uuid.UUID `json:"uuid"`
-	Vote      int64     `json:"vote"`
-	Active    bool      `json:"active"`
-	mu        sync.Mutex
-	outOfDate atomic.Bool
+	Name            string    `json:"name"`
+	UUID            uuid.UUID `json:"uuid"`
+	Vote            int64     `json:"vote"`
+	Active          bool      `json:"active"`
+	mu              sync.Mutex
+	mostRecentState atomic.Value
+	havePing        atomic.Bool
 }
 
 type Session struct {
@@ -28,7 +29,6 @@ type Session struct {
 	votesVisible        bool
 	voteOptions         string
 	connections         map[*websocket.Conn]*Connection
-	mostRecentState     atomic.Value
 	idleTimer           *time.Timer
 	uuid                uuid.UUID
 	toggleCooldown      atomic.Bool
@@ -170,45 +170,53 @@ func (s *Session) sendState() {
 		fmt.Println("Unable to marshal JSON")
 		return
 	}
-	s.mostRecentState.Store(jd)
 
 	for ws, data := range s.connections {
-		go s.sendData(ws, data)
+		go s.sendQueuedData(ws, data, jd, false)
 	}
 }
 
-func (s *Session) sendData(ws *websocket.Conn, data *Connection) {
-	fmt.Println("Going to broadcast data", data.outOfDate.Load())
+func (s *Session) sendPings() {
+	for ws, data := range s.connections {
+		go s.sendQueuedData(ws, data, nil, true)
+	}
+}
+
+func (s *Session) sendQueuedData(ws *websocket.Conn, data *Connection, json []byte, ping bool) {
+	fmt.Println("- Going to broadcast")
+	if json != nil {
+		data.mostRecentState.Store(json)
+	}
+	if ping {
+		data.havePing.Store(true)
+	}
 	if data.mu.TryLock() {
-		fmt.Println("Got the lock")
+		fmt.Println("-- Got the lock")
 		defer data.mu.Unlock()
-		jd := s.mostRecentState.Load()
-		if jd == nil {
-			fmt.Println("Cached JSON not found")
-			return
-		}
-		if err := ws.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
-			fmt.Println("Write error:", err)
-			data.outOfDate.Store(false)
-			return
-		}
-		fmt.Println("Sent JSON", data.outOfDate.Load())
-		for data.outOfDate.Swap(false) {
-			fmt.Println("After sending data, outOfDate was true, sending data again")
-			jd := s.mostRecentState.Load()
-			if jd == nil {
-				fmt.Println("Cached JSON not found")
+		jd := data.mostRecentState.Swap([]byte(""))
+		if jd != nil && len(jd.([]byte)) != 0 {
+			fmt.Println("-- JSON Message Found")
+			if err := ws.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
+				fmt.Println("--- Write error while sending JSON:", err)
 				return
 			}
+			fmt.Println("-- Sent JSON")
+		} else if data.havePing.Swap(false) {
+			fmt.Println("-- New Ping, sending Ping")
+			if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+				fmt.Println("--- Write error while sending Ping:", err)
+				return
+			}
+		}
+		for jd = data.mostRecentState.Swap([]byte("")); jd != nil && len(jd.([]byte)) != 0; jd = data.mostRecentState.Swap([]byte("")) {
+			fmt.Println("-- New Data, sending JSON")
 			if err := ws.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
-				fmt.Println("Write error:", err)
-				data.outOfDate.Store(false)
+				fmt.Println("--- Write error while sending JSON:", err)
 				return
 			}
 		}
 	} else {
-		data.outOfDate.Store(true)
-		fmt.Println("Unable to get lock, will send data again")
+		fmt.Println("-- Unable to get the lock")
 		return
 	}
 }

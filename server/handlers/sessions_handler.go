@@ -86,9 +86,9 @@ func (s *SessionsHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Request to join Session:", uuidString)
 	connection, err := upgrader.Upgrade(w, r, nil)
 	connection.SetReadLimit(1 << 20)
-	connection.SetReadDeadline(time.Now().Add(2 * time.Hour))
+	connection.SetReadDeadline(time.Now().Add(time.Minute))
 	connection.SetPongHandler(func(string) error {
-		connection.SetReadDeadline(time.Now().Add(2 * time.Hour))
+		connection.SetReadDeadline(time.Now().Add(time.Minute))
 		return nil
 	})
 	if err != nil {
