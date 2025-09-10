@@ -1,4 +1,4 @@
-import { LocationProvider, Router, Route } from "preact-iso";
+import { LocationProvider, Router } from "preact-iso";
 import "./app.css";
 import Landing from "./lib/landing";
 import Poker from "./lib/poker";

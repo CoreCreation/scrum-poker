@@ -19,7 +19,7 @@ export default function VoteList({ data, votesVisible }) {
       <tbody>
         {dataSorted.map(({ name, vote }) => (
           <tr>
-            <th scope="row">{name}</th>
+            <th scope="row">{name.length ? name : "No Name"}</th>
             {votesVisible ? (
               <td>{vote === -1 ? "No Vote 🤷" : vote}</td>
             ) : (

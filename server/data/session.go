@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -22,6 +23,7 @@ type Connection struct {
 	mu              sync.Mutex
 	mostRecentState atomic.Value
 	havePing        atomic.Bool
+	cancel          context.CancelFunc
 }
 
 type Session struct {
@@ -40,7 +42,7 @@ func NewSession(parent *Sessions, uuid uuid.UUID) *Session {
 		parent:       parent,
 		uuid:         uuid,
 		votesVisible: false,
-		voteOptions:  "1, 2, 3, 5, 8",
+		voteOptions:  "1, 2, 3, 5, 8, 12",
 		connections:  make(map[*websocket.Conn]*Connection),
 	}
 
@@ -58,12 +60,21 @@ func NewSession(parent *Sessions, uuid uuid.UUID) *Session {
 func (s *Session) AddConnection(connection *websocket.Conn) {
 	fmt.Println("Adding a connection and stopping session timer")
 	s.idleTimer.Stop()
+	ctx, cancel := context.WithCancel(context.Background())
 	s.connections[connection] = &Connection{
 		UUID:   uuid.New(),
-		Name:   "No Username",
+		Name:   "",
 		Vote:   -1,
 		Active: true,
+		cancel: cancel,
 	}
+
+	// If context is canceled, kill the connection right away
+	go func() {
+		<-ctx.Done()
+		connection.SetReadDeadline(time.Now())
+	}()
+
 	s.readLoop(connection, s.connections[connection])
 }
 
@@ -84,7 +95,6 @@ type ClientCommand struct {
 func (s *Session) readLoop(connection *websocket.Conn, data *Connection) {
 	for {
 		var command ClientCommand
-
 		if err := connection.ReadJSON(&command); err != nil {
 			fmt.Println("Unable to read Client Command:", err)
 			break
@@ -137,6 +147,23 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 		data.Active = true
 	case "Init":
 		fmt.Println("Init")
+		if len(msg.Body) > 0 {
+			fmt.Println("Connection made with already existent UUID, evicting old connection")
+			parsed, err := uuid.Parse(msg.Body)
+			if err != nil {
+				fmt.Println("UUID passed for connection can not be parsed, ignoring", err)
+				break
+			}
+			for _, connection := range s.connections {
+				if connection.UUID == parsed {
+					fmt.Println("Connection found, canceling")
+					connection.cancel()
+					data.Vote = connection.Vote
+					data.Active = connection.Active
+					data.Name = connection.Name
+				}
+			}
+		}
 	}
 
 	s.sendState()
@@ -150,9 +177,11 @@ func (s *Session) setTimer() {
 }
 
 type State struct {
+	UserID       uuid.UUID     `json:"userId"`
 	VotesVisible bool          `json:"votesVisible"`
 	VoteOptions  string        `json:"voteOptions"`
 	UserData     []*Connection `json:"userData"`
+	Username     string        `json:"username"`
 }
 
 func (s *Session) sendState() {
@@ -161,17 +190,18 @@ func (s *Session) sendState() {
 		values = append(values, v)
 	}
 
-	jd, err := json.Marshal(State{
-		VotesVisible: s.votesVisible,
-		VoteOptions:  s.voteOptions,
-		UserData:     values,
-	})
-	if err != nil {
-		fmt.Println("Unable to marshal JSON")
-		return
-	}
-
 	for ws, data := range s.connections {
+		jd, err := json.Marshal(State{
+			UserID:       data.UUID,
+			Username:     data.Name,
+			VotesVisible: s.votesVisible,
+			VoteOptions:  s.voteOptions,
+			UserData:     values,
+		})
+		if err != nil {
+			fmt.Println("Unable to marshal JSON")
+			return
+		}
 		go s.sendQueuedData(ws, data, jd, false)
 	}
 }

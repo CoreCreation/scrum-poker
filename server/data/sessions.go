@@ -24,7 +24,7 @@ func NewSessions() *Sessions {
 func (s *Sessions) CreateSession() uuid.UUID {
 	uuid := uuid.New()
 	s.Sessions[uuid] = NewSession(s, uuid)
-	if len(s.Sessions) > 0 {
+	if len(s.Sessions) > 0 && s.ctx == nil {
 		fmt.Println("Sessions added, creating heartbeat", uuid)
 		s.ctx, s.cancel = context.WithCancel(context.Background())
 		go s.heartbeat(s.ctx)
@@ -37,6 +37,8 @@ func (s *Sessions) RemoveSession(uuid uuid.UUID) {
 	delete(s.Sessions, uuid)
 	if len(s.Sessions) == 0 {
 		fmt.Println("All sessions removed, canceling heartbeat", uuid)
+		s.ctx = nil
+		s.cancel = nil
 		s.cancel()
 	}
 }

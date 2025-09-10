@@ -16,6 +16,7 @@ export default function Poker() {
 
   const { route } = useLocation();
 
+  const userId = useRef(null);
   const [status, setStatus] = useState("Connecting..");
   const [votesVisible, setVotesVisible] = useState(false);
   const [voteOptions, setVoteOptions] = useState([]);
@@ -63,6 +64,16 @@ export default function Poker() {
       return route("/");
     }
 
+    startWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  function startWebSocket() {
     // Get WebSocket Connection
     const url = new URL("/api/sessions/" + id + "/join", window.location.href);
     url.protocol = url.protocol.replace("http", "ws");
@@ -76,7 +87,7 @@ export default function Poker() {
       ws.send(
         JSON.stringify({
           type: "Init",
-          body: "",
+          body: userId.current ?? "",
         })
       );
       if (userName) {
@@ -96,8 +107,10 @@ export default function Poker() {
       }
     };
     ws.onclose = () => {
-      alert("Connection Closed. Please Refresh to Reconnect");
-      setStatus("Closed");
+      ws.close();
+      wsRef.current = null;
+      startWebSocket();
+      setStatus("Connecting...");
     };
     ws.onerror = () => {
       alert("Error with Connection. Please Refresh to Reconnect");
@@ -106,8 +119,12 @@ export default function Poker() {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
+        userId.current = msg.userId;
         setVotesVisible(msg.votesVisible);
         setVoteData(msg.userData);
+        if (msg.username.length && userName !== msg.username) {
+          persistUsername(msg.username);
+        }
         const numbers = msg.voteOptions
           .split(",")
           .map((s) => parseInt(s.trim()));
@@ -121,12 +138,7 @@ export default function Poker() {
         console.log("Unable to parse JSON from WebSocket");
       }
     };
-
-    return () => {
-      wsRef.current = null;
-      ws.close();
-    };
-  }, []);
+  }
 
   function isEqual(a1, a2) {
     if (a1.length !== a2.length) return false;
@@ -143,9 +155,13 @@ export default function Poker() {
         body: newName,
       })
     );
+    persistUsername(newName);
+    setEditNameOpen(false);
+  }
+
+  function persistUsername(newName) {
     setUserName(newName);
     localStorage.setItem("scrum-poker-username", newName);
-    setEditNameOpen(false);
   }
 
   function editVotes(str) {
