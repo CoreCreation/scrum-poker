@@ -3,8 +3,8 @@ package data
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -88,8 +88,11 @@ func (s *Session) RemoveConnection(connection *websocket.Conn) {
 }
 
 type ClientCommand struct {
-	Type string `json:"type"`
-	Body string `json:"body"`
+	Type   *string      `json:"type"`
+	Body   *string      `json:"body"`
+	Name   *string      `json:"username"`
+	Vote   *json.Number `json:"vote"`
+	Active *bool        `json:"active"`
 }
 
 func (s *Session) readLoop(connection *websocket.Conn, data *Connection) {
@@ -103,19 +106,39 @@ func (s *Session) readLoop(connection *websocket.Conn, data *Connection) {
 	}
 }
 
-func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
-	switch msg.Type {
-	case "SetName":
+func setData(msg ClientCommand, data *Connection) error {
+	if msg.Name != nil && *msg.Name != data.Name {
 		fmt.Println("Changing Username to", msg.Body)
-		data.Name = msg.Body
-	case "CastVote":
-		vote, err := strconv.ParseInt(msg.Body, 10, 64)
+		data.Name = *msg.Name
+	}
+	if msg.Vote != nil {
+		newVote, err := msg.Vote.Int64()
 		if err != nil {
 			fmt.Println("Unable to parse into int64", msg.Body)
+			return errors.New("Unable to parse number")
+		}
+		if newVote != data.Vote {
+			fmt.Println("Vote Cast for", newVote)
+			data.Vote = newVote
+		}
+	}
+	if msg.Active != nil && *msg.Active != data.Active {
+		fmt.Println("User changing active:", msg.Active)
+		if *msg.Active == false {
+			data.Vote = -1
+		}
+		data.Active = *msg.Active
+	}
+	return nil
+}
+
+func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
+	switch *msg.Type {
+	case "UpdateData":
+		err := setData(msg, data)
+		if err != nil {
 			break
 		}
-		fmt.Println("Vote Cast for", msg.Body)
-		data.Vote = vote
 	case "ClearVotes":
 		if s.toggleCooldown.Load() {
 			fmt.Println("Toggle is on cooldown, skipping")
@@ -137,19 +160,12 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 		s.setTimer()
 	case "SetOptions":
 		fmt.Println("Set Vote Options to:", msg.Body)
-		s.voteOptions = msg.Body
-	case "LeaveVote":
-		fmt.Println("User leaving vote")
-		data.Active = false
-		data.Vote = -1
-	case "JoinVote":
-		fmt.Println("User joining vote")
-		data.Active = true
+		s.voteOptions = *msg.Body
 	case "Init":
 		fmt.Println("Init")
-		if len(msg.Body) > 0 {
+		if msg.Body != nil && len(*msg.Body) > 0 {
 			fmt.Println("Connection made with already existent UUID, evicting old connection")
-			parsed, err := uuid.Parse(msg.Body)
+			parsed, err := uuid.Parse(*msg.Body)
 			if err != nil {
 				fmt.Println("UUID passed for connection can not be parsed, ignoring", err)
 				break
@@ -158,11 +174,13 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 				if connection.UUID == parsed {
 					fmt.Println("Connection found, canceling")
 					connection.cancel()
-					data.Vote = connection.Vote
-					data.Active = connection.Active
-					data.Name = connection.Name
 				}
 			}
+		}
+		err := setData(msg, data)
+		if err != nil {
+			fmt.Println("Unable to set data during init", err)
+			break
 		}
 	}
 

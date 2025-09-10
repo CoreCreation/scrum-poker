@@ -37,9 +37,9 @@ func (s *Sessions) RemoveSession(uuid uuid.UUID) {
 	delete(s.Sessions, uuid)
 	if len(s.Sessions) == 0 {
 		fmt.Println("All sessions removed, canceling heartbeat", uuid)
+		s.cancel()
 		s.ctx = nil
 		s.cancel = nil
-		s.cancel()
 	}
 }
 

@@ -25,7 +25,7 @@ export default function Poker() {
   const wsStopped = useRef(false);
   const confettiRef = useRef(null);
   const dropdownRef = useRef(null);
-  const [userName, setUserName] = useState(
+  const [username, setUserName] = useState(
     localStorage.getItem("scrum-poker-username") || null
   );
   const [isVoting, setIsVoting] = useState(() => {
@@ -90,27 +90,14 @@ export default function Poker() {
 
     ws.onopen = () => {
       setStatus("Open");
-      ws.send(
-        JSON.stringify({
-          type: "Init",
-          body: userId.current ?? "",
-        })
-      );
-      if (userName) {
-        ws.send(
-          JSON.stringify({
-            type: "SetName",
-            body: userName,
-          })
-        );
-      }
-      if (isVoting === false) {
-        ws.send(
-          JSON.stringify({
-            type: "LeaveVote",
-          })
-        );
-      }
+      const initBody = {
+        type: "Init",
+      };
+      if (username) initBody.username = username;
+      if (userId.current) initBody.body = userId.current;
+      if (lastVote) initBody.vote = lastVote;
+      if (isVoting === false) initBody.active = false;
+      ws.send(JSON.stringify(initBody));
     };
     ws.onclose = () => {
       ws.close();
@@ -130,7 +117,7 @@ export default function Poker() {
         userId.current = msg.userId;
         setVotesVisible(msg.votesVisible);
         setVoteData(msg.userData);
-        if (msg.username.length && userName !== msg.username) {
+        if (msg.username.length && username !== msg.username) {
           persistUsername(msg.username);
         }
         const numbers = msg.voteOptions
@@ -159,8 +146,8 @@ export default function Poker() {
   function editName(newName) {
     wsRef.current.send(
       JSON.stringify({
-        type: "SetName",
-        body: newName,
+        type: "UpdateData",
+        username: newName,
       })
     );
     persistUsername(newName);
@@ -185,8 +172,8 @@ export default function Poker() {
   function sendVote(number) {
     wsRef.current.send(
       JSON.stringify({
-        type: "CastVote",
-        body: String(number),
+        type: "UpdateData",
+        vote: number,
       })
     );
     setLastVote(number);
@@ -213,7 +200,8 @@ export default function Poker() {
   function leaveVote() {
     wsRef.current.send(
       JSON.stringify({
-        type: "LeaveVote",
+        type: "UpdateData",
+        active: false,
       })
     );
     setLastVote(null);
@@ -225,7 +213,8 @@ export default function Poker() {
   function joinVote() {
     wsRef.current.send(
       JSON.stringify({
-        type: "JoinVote",
+        type: "UpdateData",
+        active: true,
       })
     );
     setIsVoting(true);
@@ -291,7 +280,7 @@ export default function Poker() {
             open={editNameOpen}
             setOpen={setEditNameOpen}
             save={editName}
-            name={userName}
+            name={username}
           />
           <EditVoteOptionsModal
             open={editVotesOpen}
