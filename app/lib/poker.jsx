@@ -119,6 +119,7 @@ export default function Poker() {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
+        console.log(msg.data);
         userId.current = msg.userId;
         setVotesVisible(msg.votesVisible);
         setVoteData(msg.userData);
