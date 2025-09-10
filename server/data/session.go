@@ -1,7 +1,6 @@
 package data
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,39 +14,66 @@ import (
 
 var timeLimit time.Duration = 10 * time.Minute
 
-type Connection struct {
-	Name            string    `json:"name"`
-	UUID            uuid.UUID `json:"uuid"`
-	Vote            int64     `json:"vote"`
-	Active          bool      `json:"active"`
+type Client struct {
+	Username    string `json:"username"`
+	Vote        int64  `json:"vote"`
+	Active      bool   `json:"active"`
+	uuid        uuid.UUID
+	connections map[*websocket.Conn]bool
+	// cancel          context.CancelFunc
 	mu              sync.Mutex
 	mostRecentState atomic.Value
 	havePing        atomic.Bool
-	cancel          context.CancelFunc
+}
+
+func (c *Client) setData(cmd *ClientCommand) error {
+	if cmd.Name != nil && *cmd.Name != c.Username {
+		fmt.Println("Changing Username to", *cmd.Name)
+		c.Username = *cmd.Name
+	}
+	if cmd.Vote != nil {
+		newVote, err := cmd.Vote.Int64()
+		if err != nil {
+			fmt.Println("Unable to parse into int64", *cmd.Vote)
+			return errors.New("Unable to parse number")
+		}
+		if newVote != c.Vote {
+			fmt.Println("Vote Cast for", newVote)
+			c.Vote = newVote
+		}
+	}
+	if cmd.Active != nil && *cmd.Active != c.Active {
+		fmt.Println("User changing active:", *cmd.Active)
+		if *cmd.Active == false {
+			c.Vote = -1
+		}
+		c.Active = *cmd.Active
+	}
+	return nil
 }
 
 type Session struct {
 	parent              *Sessions
 	votesVisible        bool
 	voteOptions         string
-	connections         map[*websocket.Conn]*Connection
+	clients             map[uuid.UUID]*Client
 	idleTimer           *time.Timer
 	uuid                uuid.UUID
 	toggleCooldown      atomic.Bool
 	toggleCooldownTimer *time.Timer
 }
 
-func NewSession(parent *Sessions, uuid uuid.UUID) *Session {
+func NewSession(parent *Sessions, sid uuid.UUID) *Session {
 	session := &Session{
 		parent:       parent,
-		uuid:         uuid,
+		uuid:         sid,
 		votesVisible: false,
-		voteOptions:  "1, 2, 3, 5, 8, 12",
-		connections:  make(map[*websocket.Conn]*Connection),
+		voteOptions:  "1, 2, 3, 5, 8, 13, 20",
+		clients:      make(map[uuid.UUID]*Client),
 	}
 
 	session.idleTimer = time.AfterFunc(timeLimit, func() {
-		if len(session.connections) > 0 {
+		if !session.NeedTimer() {
 			return
 		}
 
@@ -57,34 +83,80 @@ func NewSession(parent *Sessions, uuid uuid.UUID) *Session {
 	return session
 }
 
-func (s *Session) AddConnection(connection *websocket.Conn) {
-	fmt.Println("Adding a connection and stopping session timer")
-	s.idleTimer.Stop()
-	ctx, cancel := context.WithCancel(context.Background())
-	s.connections[connection] = &Connection{
-		UUID:   uuid.New(),
-		Name:   "",
-		Vote:   -1,
-		Active: true,
-		cancel: cancel,
+func (s *Session) NeedTimer() bool {
+	needTimer := true
+	for _, client := range s.clients {
+		needTimer = needTimer && len(client.connections) == 0
 	}
-
-	// If context is canceled, kill the connection right away
-	go func() {
-		<-ctx.Done()
-		connection.SetReadDeadline(time.Now())
-	}()
-
-	s.readLoop(connection, s.connections[connection])
+	return needTimer
 }
 
-func (s *Session) RemoveConnection(connection *websocket.Conn) {
-	delete(s.connections, connection)
-	s.sendState()
-	if len(s.connections) == 0 {
-		fmt.Println("All connections removed, starting session timer")
+func (s *Session) handleLifeTimer() {
+	if s.NeedTimer() {
+		fmt.Println("All clients disconnected, starting session timer")
 		s.idleTimer.Reset(timeLimit)
+	} else {
+		fmt.Println("Some clients connected, stopping session timer")
+		s.idleTimer.Stop()
 	}
+}
+
+func (s *Session) HandleConnection(clientId uuid.UUID, connection *websocket.Conn) {
+
+	client, ok := s.clients[clientId]
+	// Client already exists, add its connection
+	if ok {
+
+		// Cancel the current connection
+		// client.cancel()
+
+		// and then create new context
+		// ctx, cancel := context.WithCancel(context.Background())
+		// go func() {
+		// 	<-ctx.Done()
+		// 	connection.SetReadDeadline(time.Now())
+		// }()
+		// client.cancel = cancel
+
+		// and then set new connection
+		client.connections[connection] = true
+
+		// trigger fresh data to be sent
+		s.sendState(client)
+
+	} else {
+		// ctx, cancel := context.WithCancel(context.Background())
+		client = &Client{
+			uuid:     uuid.New(),
+			Username: "",
+			Vote:     -1,
+			Active:   true,
+			// cancel:      cancel,
+			connections: map[*websocket.Conn]bool{connection: true},
+		}
+
+		s.clients[clientId] = client
+
+		// If context is canceled, kill the connection right away
+		// go func() {
+		// 	<-ctx.Done()
+		// 	connection.SetReadDeadline(time.Now())
+		// }()
+
+		s.sendInit(client)
+	}
+
+	s.readLoop(connection, s.clients[clientId])
+}
+
+func (s *Session) RemoveConnection(cid uuid.UUID, connection *websocket.Conn) {
+	client, ok := s.clients[cid]
+	if !ok {
+		fmt.Println("Unable to get client", cid)
+	}
+	delete(client.connections, connection)
+	s.broadcastState()
+	s.handleLifeTimer()
 }
 
 type ClientCommand struct {
@@ -95,47 +167,25 @@ type ClientCommand struct {
 	Active *bool        `json:"active"`
 }
 
-func (s *Session) readLoop(connection *websocket.Conn, data *Connection) {
+type ServerCommand struct {
+	Type string `json:"type"`
+}
+
+func (s *Session) readLoop(connection *websocket.Conn, client *Client) {
 	for {
 		var command ClientCommand
 		if err := connection.ReadJSON(&command); err != nil {
 			fmt.Println("Unable to read Client Command:", err)
 			break
 		}
-		s.handleMessage(command, data)
+		s.handleMessage(&command, client)
 	}
 }
 
-func setData(msg ClientCommand, data *Connection) error {
-	if msg.Name != nil && *msg.Name != data.Name {
-		fmt.Println("Changing Username to", msg.Body)
-		data.Name = *msg.Name
-	}
-	if msg.Vote != nil {
-		newVote, err := msg.Vote.Int64()
-		if err != nil {
-			fmt.Println("Unable to parse into int64", msg.Body)
-			return errors.New("Unable to parse number")
-		}
-		if newVote != data.Vote {
-			fmt.Println("Vote Cast for", newVote)
-			data.Vote = newVote
-		}
-	}
-	if msg.Active != nil && *msg.Active != data.Active {
-		fmt.Println("User changing active:", msg.Active)
-		if *msg.Active == false {
-			data.Vote = -1
-		}
-		data.Active = *msg.Active
-	}
-	return nil
-}
-
-func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
-	switch *msg.Type {
+func (s *Session) handleMessage(cmd *ClientCommand, client *Client) {
+	switch *cmd.Type {
 	case "UpdateData":
-		err := setData(msg, data)
+		err := client.setData(cmd)
 		if err != nil {
 			break
 		}
@@ -145,8 +195,8 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 			break
 		}
 		fmt.Println("All Votes Cleared")
-		for _, data := range s.connections {
-			data.Vote = -1
+		for _, client := range s.clients {
+			client.Vote = -1
 		}
 		s.votesVisible = false
 		s.setTimer()
@@ -159,32 +209,11 @@ func (s *Session) handleMessage(msg ClientCommand, data *Connection) {
 		s.votesVisible = true
 		s.setTimer()
 	case "SetOptions":
-		fmt.Println("Set Vote Options to:", msg.Body)
-		s.voteOptions = *msg.Body
-	case "Init":
-		fmt.Println("Init")
-		if msg.Body != nil && len(*msg.Body) > 0 {
-			fmt.Println("Connection made with already existent UUID, evicting old connection")
-			parsed, err := uuid.Parse(*msg.Body)
-			if err != nil {
-				fmt.Println("UUID passed for connection can not be parsed, ignoring", err)
-				break
-			}
-			for _, connection := range s.connections {
-				if connection.UUID == parsed {
-					fmt.Println("Connection found, canceling")
-					connection.cancel()
-				}
-			}
-		}
-		err := setData(msg, data)
-		if err != nil {
-			fmt.Println("Unable to set data during init", err)
-			break
-		}
+		fmt.Println("Set Vote Options to:", cmd.Body)
+		s.voteOptions = *cmd.Body
 	}
 
-	s.sendState()
+	s.broadcastState()
 }
 
 func (s *Session) setTimer() {
@@ -195,72 +224,129 @@ func (s *Session) setTimer() {
 }
 
 type State struct {
-	UserID       uuid.UUID     `json:"userId"`
-	VotesVisible bool          `json:"votesVisible"`
-	VoteOptions  string        `json:"voteOptions"`
-	UserData     []*Connection `json:"userData"`
-	Username     string        `json:"username"`
+	VotesVisible bool      `json:"votesVisible"`
+	VoteOptions  string    `json:"voteOptions"`
+	ClientData   []*Client `json:"clientData"`
+	Username     string    `json:"username"`
+	Active       bool      `json:"active"`
 }
 
-func (s *Session) sendState() {
-	values := make([]*Connection, 0, len(s.connections))
-	for _, v := range s.connections {
-		values = append(values, v)
+func (s *Session) collectionClientData() []*Client {
+	values := make([]*Client, 0, len(s.clients))
+	for _, client := range s.clients {
+		if len(client.connections) > 0 {
+			values = append(values, client)
+		}
 	}
+	return values
+}
 
-	for ws, data := range s.connections {
-		jd, err := json.Marshal(State{
-			UserID:       data.UUID,
-			Username:     data.Name,
-			VotesVisible: s.votesVisible,
-			VoteOptions:  s.voteOptions,
-			UserData:     values,
-		})
+func (s *Session) createState(client *Client, clientData []*Client) ([]byte, error) {
+	jd, err := json.Marshal(State{
+		Username:     client.Username,
+		VotesVisible: s.votesVisible,
+		VoteOptions:  s.voteOptions,
+		Active:       client.Active,
+		ClientData:   clientData,
+	})
+	if err != nil {
+		fmt.Println("Unable to marshal JSON")
+		return nil, err
+	}
+	return jd, nil
+}
+
+func (s *Session) broadcastState() {
+	clientData := s.collectionClientData()
+
+	for _, client := range s.clients {
+		jd, err := s.createState(client, clientData)
 		if err != nil {
-			fmt.Println("Unable to marshal JSON")
 			return
 		}
-		go s.sendQueuedData(ws, data, jd, false)
+		go s.sendQueuedData(client, jd, false)
 	}
+}
+
+func (s *Session) sendState(client *Client) {
+	clientData := s.collectionClientData()
+
+	jd, err := s.createState(client, clientData)
+	if err != nil {
+		return
+	}
+	go s.sendQueuedData(client, jd, false)
+}
+
+func (s *Session) sendInit(client *Client) {
+
+	fmt.Println("Sending Init for a new client")
+
+	jd, err := s.createServerCommand(&ServerCommand{
+		Type: "Init",
+	})
+	if err != nil {
+		return
+	}
+	go s.sendQueuedData(client, jd, false)
+}
+
+func (s *Session) createServerCommand(cmd *ServerCommand) ([]byte, error) {
+	jd, err := json.Marshal(cmd)
+	if err != nil {
+		fmt.Println("Unable to marshal JSON")
+		return nil, err
+	}
+	return jd, nil
 }
 
 func (s *Session) sendPings() {
-	for ws, data := range s.connections {
-		go s.sendQueuedData(ws, data, nil, true)
+	for _, client := range s.clients {
+		go s.sendQueuedData(client, nil, true)
 	}
 }
 
-func (s *Session) sendQueuedData(ws *websocket.Conn, data *Connection, json []byte, ping bool) {
+func (s *Session) sendQueuedData(client *Client, json []byte, ping bool) {
 	fmt.Println("- Going to broadcast")
+	if len(client.connections) == 0 {
+		fmt.Println("Client connections == 0, skipping message")
+		return
+	}
 	if json != nil {
-		data.mostRecentState.Store(json)
+		client.mostRecentState.Store(json)
 	}
 	if ping {
-		data.havePing.Store(true)
+		client.havePing.Store(true)
 	}
-	if data.mu.TryLock() {
+	if client.mu.TryLock() {
 		fmt.Println("-- Got the lock")
-		defer data.mu.Unlock()
-		jd := data.mostRecentState.Swap([]byte(""))
+		defer client.mu.Unlock()
+		jd := client.mostRecentState.Swap([]byte(""))
 		if jd != nil && len(jd.([]byte)) != 0 {
 			fmt.Println("-- JSON Message Found")
-			if err := ws.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
-				fmt.Println("--- Write error while sending JSON:", err)
-				return
+			for connection := range client.connections {
+				if err := connection.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
+					fmt.Println("--- Write error while sending JSON:", err)
+					return
+				}
 			}
 			fmt.Println("-- Sent JSON")
-		} else if data.havePing.Swap(false) {
+		} else if client.havePing.Swap(false) {
 			fmt.Println("-- New Ping, sending Ping")
-			if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
-				fmt.Println("--- Write error while sending Ping:", err)
-				return
+			for connection := range client.connections {
+				if err := connection.WriteMessage(websocket.PingMessage, nil); err != nil {
+					fmt.Println("--- Write error while sending Ping:", err)
+					return
+				}
 			}
 		}
-		for jd = data.mostRecentState.Swap([]byte("")); jd != nil && len(jd.([]byte)) != 0; jd = data.mostRecentState.Swap([]byte("")) {
+		for jd = client.mostRecentState.Swap([]byte("")); jd != nil && len(jd.([]byte)) != 0; jd = client.mostRecentState.Swap([]byte("")) {
 			fmt.Println("-- New Data, sending JSON")
-			if err := ws.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
-				fmt.Println("--- Write error while sending JSON:", err)
-				return
+			for connection := range client.connections {
+				if err := connection.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
+					fmt.Println("--- Write error while sending JSON:", err)
+					return
+				}
 			}
 		}
 	} else {

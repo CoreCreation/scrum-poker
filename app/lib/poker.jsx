@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import EditNameModal from "./poker/editNameModal";
 import EditVoteOptionsModal from "./poker/editVoteOptionsModal";
 import JSConfetti from "js-confetti";
+import { v4 as uuid } from "uuid";
 
 import ThemeToggle from "./components/themeToggle";
 
@@ -16,19 +17,18 @@ export default function Poker() {
 
   const { route } = useLocation();
 
-  const userId = useRef(null);
+  const clientId = useRef(null);
   const [status, setStatus] = useState("Connecting..");
   const [votesVisible, setVotesVisible] = useState(false);
   const [voteOptions, setVoteOptions] = useState([]);
-  const [voteData, setVoteData] = useState(null);
-  const wsRef = useRef(null);
-  const wsStopped = useRef(false);
+  const [clientData, setClientData] = useState(null);
+  const wsStateRef = useRef({});
   const confettiRef = useRef(null);
   const dropdownRef = useRef(null);
   const [username, setUserName] = useState(
     localStorage.getItem("scrum-poker-username") || null
   );
-  const [isVoting, setIsVoting] = useState(() => {
+  const [active, setActive] = useState(() => {
     const curr = localStorage.getItem("scrum-poker-is-voting");
     return curr === null ? true : curr === "true";
   });
@@ -46,7 +46,7 @@ export default function Poker() {
 
   useEffect(() => {
     if (votesVisible) {
-      const votes = voteData.map((c) => c.vote).filter((c) => c !== -1);
+      const votes = clientData.map((c) => c.vote).filter((c) => c !== -1);
       const first = votes[0];
       if (
         votes.length > 1 &&
@@ -65,48 +65,51 @@ export default function Poker() {
       return route("/");
     }
 
+    const key = "scrum-poker-client-id";
+    let cid = localStorage.getItem(key);
+    if (!cid) {
+      cid = uuid();
+      localStorage.setItem(key, cid);
+    }
+    clientId.current = cid;
+
     startWebSocket();
 
     return () => {
-      wsStopped.current = true;
-      if (wsRef.current) {
-        wsRef.current.close();
+      wsStateRef.current.stopped = true;
+      if (wsStateRef.current.ws) {
+        wsStateRef.current.ws.close();
       }
     };
   }, []);
 
   function startWebSocket() {
-    if (wsStopped.current === true) {
+    if (wsStateRef.current.stopped === true) {
       return;
     }
 
     // Get WebSocket Connection
-    const url = new URL("/api/sessions/" + id + "/join", window.location.href);
+    const url = new URL(
+      "/api/sessions/" + id + "/join/" + clientId.current,
+      window.location.href
+    );
     url.protocol = url.protocol.replace("http", "ws");
-    console.log("Connecting to", url.href);
+    console.log("Connecting to", url.href, "with client ID", clientId.current);
 
     const ws = new WebSocket(url);
-    wsRef.current = ws;
+    wsStateRef.current.ws = ws;
 
     ws.onopen = () => {
       setStatus("Open");
-      const initBody = {
-        type: "Init",
-      };
-      if (username) initBody.username = username;
-      if (userId.current) initBody.body = userId.current;
-      if (lastVote) initBody.vote = lastVote;
-      if (isVoting === false) initBody.active = false;
-      ws.send(JSON.stringify(initBody));
     };
     ws.onclose = () => {
       ws.close();
-      wsRef.current = null;
+      wsStateRef.current.ws = null;
       startWebSocket();
       setStatus("Connecting...");
     };
     ws.onerror = () => {
-      wsStopped.current = true;
+      wsStateRef.current.stopped = true;
       alert("Error with Connection. Please Refresh to Reconnect");
       setStatus("Error");
     };
@@ -114,23 +117,32 @@ export default function Poker() {
       try {
         const msg = JSON.parse(e.data);
         console.log(msg);
-        userId.current = msg.userId;
-        setVotesVisible(msg.votesVisible);
-        setVoteData(msg.userData);
-        if (msg.username.length && username !== msg.username) {
+        if (msg.type === "Init") {
+          const obj = {
+            type: "UpdateData",
+          };
+          if (username) obj.username = username;
+          if (lastVote) obj.vote = lastVote;
+          if (active === false) obj.active = active;
+          ws.send(JSON.stringify(obj));
+        } else {
           persistUsername(msg.username);
+          setLastVote(msg.vote);
+          setVotesVisible(msg.votesVisible);
+          setActive(msg.active);
+          setClientData(msg.clientData);
+          const numbers = msg.voteOptions
+            .split(",")
+            .map((s) => parseInt(s.trim()));
+          if (
+            numbers.reduce((p, c) => (p &&= c > 0 && !Number.isNaN(c)), true) &&
+            !isEqual(voteOptions, numbers)
+          ) {
+            setVoteOptions(numbers);
+          }
         }
-        const numbers = msg.voteOptions
-          .split(",")
-          .map((s) => parseInt(s.trim()));
-        if (
-          numbers.reduce((p, c) => (p &&= c > 0 && !Number.isNaN(c)), true) &&
-          !isEqual(voteOptions, numbers)
-        ) {
-          setVoteOptions(numbers);
-        }
-      } catch {
-        console.log("Unable to parse JSON from WebSocket");
+      } catch (e) {
+        console.log("Unable to parse JSON from WebSocket", e);
       }
     };
   }
@@ -144,7 +156,7 @@ export default function Poker() {
   }
 
   function editName(newName) {
-    wsRef.current.send(
+    wsStateRef.current.ws.send(
       JSON.stringify({
         type: "UpdateData",
         username: newName,
@@ -160,7 +172,7 @@ export default function Poker() {
   }
 
   function editVotes(str) {
-    wsRef.current.send(
+    wsStateRef.current.ws.send(
       JSON.stringify({
         type: "SetOptions",
         body: str,
@@ -170,7 +182,7 @@ export default function Poker() {
   }
 
   function sendVote(number) {
-    wsRef.current.send(
+    wsStateRef.current.ws.send(
       JSON.stringify({
         type: "UpdateData",
         vote: number,
@@ -180,7 +192,7 @@ export default function Poker() {
   }
 
   function clearVotes() {
-    wsRef.current.send(
+    wsStateRef.current.ws.send(
       JSON.stringify({
         type: "ClearVotes",
         body: "",
@@ -189,7 +201,7 @@ export default function Poker() {
   }
 
   function showVotes() {
-    wsRef.current.send(
+    wsStateRef.current.ws.send(
       JSON.stringify({
         type: "ShowVotes",
         body: "",
@@ -198,26 +210,26 @@ export default function Poker() {
   }
 
   function leaveVote() {
-    wsRef.current.send(
+    wsStateRef.current.ws.send(
       JSON.stringify({
         type: "UpdateData",
         active: false,
       })
     );
     setLastVote(null);
-    setIsVoting(false);
+    setActive(false);
     dropdownRef.current.open = false;
     localStorage.setItem("scrum-poker-is-voting", false);
   }
 
   function joinVote() {
-    wsRef.current.send(
+    wsStateRef.current.ws.send(
       JSON.stringify({
         type: "UpdateData",
         active: true,
       })
     );
-    setIsVoting(true);
+    setActive(true);
     dropdownRef.current.open = false;
     localStorage.setItem("scrum-poker-is-voting", true);
   }
@@ -257,7 +269,7 @@ export default function Poker() {
                     </a>
                   </li>
                   <li>
-                    {isVoting ? (
+                    {active ? (
                       <a onClick={leaveVote}>Leave Vote</a>
                     ) : (
                       <a onClick={joinVote}>Join Vote</a>
@@ -270,7 +282,7 @@ export default function Poker() {
           </ul>
         </nav>
       </header>
-      {!voteData ? (
+      {!clientData ? (
         <main>
           <div aria-busy="true"></div>
         </main>
@@ -292,9 +304,9 @@ export default function Poker() {
             options={voteOptions}
             sendVote={sendVote}
             lastVote={lastVote}
-            disabled={!isVoting}
+            disabled={!active}
           />
-          <VoteList data={voteData} votesVisible={votesVisible} />
+          <VoteList data={clientData} votesVisible={votesVisible} />
           {votesVisible ? (
             <button class="secondary" onClick={clearVotes}>
               Clear Votes

@@ -17,9 +17,9 @@ export default function VoteList({ data, votesVisible }) {
         </tr>
       </thead>
       <tbody>
-        {dataSorted.map(({ name, vote }) => (
-          <tr>
-            <th scope="row">{name.length ? name : "No Name"}</th>
+        {dataSorted.map(({ uuid, username, vote }) => (
+          <tr id={uuid}>
+            <th scope="row">{username.length ? username : "No Name"}</th>
             {votesVisible ? (
               <td>{vote === -1 ? "No Vote 🤷" : vote}</td>
             ) : (
