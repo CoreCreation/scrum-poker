@@ -22,6 +22,7 @@ export default function Poker() {
   const [voteOptions, setVoteOptions] = useState([]);
   const [voteData, setVoteData] = useState(null);
   const wsRef = useRef(null);
+  const wsStopped = useRef(false);
   const confettiRef = useRef(null);
   const dropdownRef = useRef(null);
   const [userName, setUserName] = useState(
@@ -67,6 +68,7 @@ export default function Poker() {
     startWebSocket();
 
     return () => {
+      wsStopped.current = true;
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -74,6 +76,10 @@ export default function Poker() {
   }, []);
 
   function startWebSocket() {
+    if (wsStopped.current === true) {
+      return;
+    }
+
     // Get WebSocket Connection
     const url = new URL("/api/sessions/" + id + "/join", window.location.href);
     url.protocol = url.protocol.replace("http", "ws");
@@ -113,13 +119,14 @@ export default function Poker() {
       setStatus("Connecting...");
     };
     ws.onerror = () => {
+      wsStopped.current = true;
       alert("Error with Connection. Please Refresh to Reconnect");
       setStatus("Error");
     };
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        console.log(msg.data);
+        console.log(msg);
         userId.current = msg.userId;
         setVotesVisible(msg.votesVisible);
         setVoteData(msg.userData);
