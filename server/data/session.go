@@ -122,7 +122,11 @@ func (s *Session) HandleConnection(clientId uuid.UUID, connection *websocket.Con
 		client.connections[connection] = true
 
 		// trigger fresh data to be sent
-		s.sendState(client)
+		if len(client.connections) > 1 {
+			s.sendState(client)
+		} else {
+			s.broadcastState()
+		}
 
 	} else {
 		// ctx, cancel := context.WithCancel(context.Background())
