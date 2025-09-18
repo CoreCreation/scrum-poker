@@ -15,10 +15,10 @@ import (
 var timeLimit time.Duration = 10 * time.Minute
 
 type Client struct {
-	Username    string `json:"username"`
-	Vote        int64  `json:"vote"`
-	Active      bool   `json:"active"`
-	uuid        uuid.UUID
+	Username    string    `json:"username"`
+	Vote        int64     `json:"vote"`
+	Active      bool      `json:"active"`
+	UUID        uuid.UUID `json:"uuid"`
 	connections map[*websocket.Conn]bool
 	// cancel          context.CancelFunc
 	mu              sync.Mutex
@@ -131,7 +131,7 @@ func (s *Session) HandleConnection(clientId uuid.UUID, connection *websocket.Con
 	} else {
 		// ctx, cancel := context.WithCancel(context.Background())
 		client = &Client{
-			uuid:     uuid.New(),
+			UUID:     uuid.New(),
 			Username: "",
 			Vote:     -1,
 			Active:   true,
