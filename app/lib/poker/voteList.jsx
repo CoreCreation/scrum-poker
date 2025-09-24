@@ -5,7 +5,9 @@ export default function VoteList({ data, votesVisible }) {
     .map((i) => i.vote)
     .filter((i) => i !== -1);
   const average = votes.reduce((p, c) => p + c, 0) / votes.length;
-  const dataSorted = data.sort((a, b) => a.uuid.localeCompare(b.uuid));
+  const dataSorted = data
+    .filter((i) => i.active)
+    .sort((a, b) => a.uuid.localeCompare(b.uuid));
   return (
     <table>
       <thead>
