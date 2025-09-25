@@ -28,7 +28,7 @@ type Client struct {
 
 func (c *Client) setData(cmd *ClientCommand) error {
 	if cmd.Name != nil && *cmd.Name != c.Username {
-		fmt.Println("Changing Username to", *cmd.Name)
+		fmt.Println("!! Change Username", c.Username, "to", *cmd.Name, "ID:", c.UUID)
 		c.Username = *cmd.Name
 	}
 	if cmd.Vote != nil {
@@ -38,12 +38,12 @@ func (c *Client) setData(cmd *ClientCommand) error {
 			return errors.New("Unable to parse number")
 		}
 		if newVote != c.Vote {
-			fmt.Println("Vote Cast for", newVote)
+			fmt.Println("!! Vote for", newVote, "by", c.Username, c.UUID)
 			c.Vote = newVote
 		}
 	}
 	if cmd.Active != nil && *cmd.Active != c.Active {
-		fmt.Println("User changing active:", *cmd.Active)
+		fmt.Println("!! Set Active to", *cmd.Active, "by", c.Username, c.UUID)
 		if *cmd.Active == false {
 			c.Vote = -1
 		}
@@ -128,6 +128,8 @@ func (s *Session) HandleConnection(clientId uuid.UUID, connection *websocket.Con
 			s.broadcastState()
 		}
 
+		fmt.Println("> Existing Client connection for Client ID", clientId, "and username", client.Username)
+
 	} else {
 		// ctx, cancel := context.WithCancel(context.Background())
 		client = &Client{
@@ -148,6 +150,7 @@ func (s *Session) HandleConnection(clientId uuid.UUID, connection *websocket.Con
 		// }()
 
 		s.sendInit(client)
+		fmt.Println("> New Client connection for Client ID", clientId)
 	}
 
 	s.readLoop(connection, s.clients[clientId])
@@ -161,6 +164,7 @@ func (s *Session) RemoveConnection(cid uuid.UUID, connection *websocket.Conn) {
 	delete(client.connections, connection)
 	s.broadcastState()
 	s.handleLifeTimer()
+	fmt.Println("> Connection Closing for Client ID", cid, "with username", client.Username)
 }
 
 type ClientCommand struct {
@@ -194,26 +198,26 @@ func (s *Session) handleMessage(cmd *ClientCommand, client *Client) {
 			break
 		}
 	case "ClearVotes":
+		fmt.Println("!! All Votes Cleared by", client.Username, client.UUID)
 		if s.toggleCooldown.Load() {
 			fmt.Println("Toggle is on cooldown, skipping")
 			break
 		}
-		fmt.Println("All Votes Cleared")
 		for _, client := range s.clients {
 			client.Vote = -1
 		}
 		s.votesVisible = false
 		s.setTimer()
 	case "ShowVotes":
+		fmt.Println("!! Votes Shown by", client.Username, client.UUID)
 		if s.toggleCooldown.Load() {
 			fmt.Println("Toggle is on cooldown, skipping")
 			break
 		}
-		fmt.Println("Votes Shown")
 		s.votesVisible = true
 		s.setTimer()
 	case "SetOptions":
-		fmt.Println("Set Vote Options to:", cmd.Body)
+		fmt.Println("!! Set Vote Options to:", cmd.Body, "by", client.Username, client.UUID)
 		s.voteOptions = *cmd.Body
 	}
 
@@ -305,15 +309,14 @@ func (s *Session) createServerCommand(cmd *ServerCommand) ([]byte, error) {
 }
 
 func (s *Session) sendPings() {
+	fmt.Println("Sending Pings for session", s.uuid)
 	for _, client := range s.clients {
 		go s.sendQueuedData(client, nil, true)
 	}
 }
 
 func (s *Session) sendQueuedData(client *Client, json []byte, ping bool) {
-	fmt.Println("- Going to broadcast")
 	if len(client.connections) == 0 {
-		fmt.Println("Client connections == 0, skipping message")
 		return
 	}
 	if json != nil {
@@ -323,20 +326,16 @@ func (s *Session) sendQueuedData(client *Client, json []byte, ping bool) {
 		client.havePing.Store(true)
 	}
 	if client.mu.TryLock() {
-		fmt.Println("-- Got the lock")
 		defer client.mu.Unlock()
 		jd := client.mostRecentState.Swap([]byte(""))
 		if jd != nil && len(jd.([]byte)) != 0 {
-			fmt.Println("-- JSON Message Found")
 			for connection := range client.connections {
 				if err := connection.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
 					fmt.Println("--- Write error while sending JSON:", err)
 					return
 				}
 			}
-			fmt.Println("-- Sent JSON")
 		} else if client.havePing.Swap(false) {
-			fmt.Println("-- New Ping, sending Ping")
 			for connection := range client.connections {
 				if err := connection.WriteMessage(websocket.PingMessage, nil); err != nil {
 					fmt.Println("--- Write error while sending Ping:", err)
@@ -345,7 +344,6 @@ func (s *Session) sendQueuedData(client *Client, json []byte, ping bool) {
 			}
 		}
 		for jd = client.mostRecentState.Swap([]byte("")); jd != nil && len(jd.([]byte)) != 0; jd = client.mostRecentState.Swap([]byte("")) {
-			fmt.Println("-- New Data, sending JSON")
 			for connection := range client.connections {
 				if err := connection.WriteMessage(websocket.TextMessage, jd.([]byte)); err != nil {
 					fmt.Println("--- Write error while sending JSON:", err)
@@ -354,7 +352,6 @@ func (s *Session) sendQueuedData(client *Client, json []byte, ping bool) {
 			}
 		}
 	} else {
-		fmt.Println("-- Unable to get the lock")
 		return
 	}
 }

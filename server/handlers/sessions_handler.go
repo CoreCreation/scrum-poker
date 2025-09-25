@@ -104,7 +104,6 @@ func (s *SessionsHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() {
-		fmt.Println("Connection Closing")
 		session.RemoveConnection(cid, connection)
 		connection.Close()
 	}()
